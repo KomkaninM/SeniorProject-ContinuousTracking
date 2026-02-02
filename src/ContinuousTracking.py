@@ -8,6 +8,7 @@ import cv2
 from pathlib import Path
 import logging
 from ultralytics import YOLO
+from datetime import datetime
 
 try:
     from save_csv import save_csv
@@ -19,23 +20,28 @@ except ImportError:
 
 class ContinuousTracking:
     """
-    A robust video tracking pipeline that processes video in chunks, 
-    saves progress atomically to Drive, and can resume from crashes 
+    A robust video tracking pipeline that processes video in chunks,
+    saves progress atomically to Drive, and can resume from crashes
     without data loss.
     """
-    def __init__(self, video_path, output_dir, tracker_config_path, model_name = "yolov9e.pt", conf=0.05, iou=0.45):
+    def __init__(self, video_path, output_dir, tracker_config_path, model_name = "yolov9e.pt", conf=0.05, iou=0.45, imgsz = 1920):
         self.video_path = Path(video_path)
         self.output_dir = Path(output_dir)
         self.tracker_yaml = tracker_config_path # YAML File path
         self.model_name = model_name
         self.conf = conf
         self.iou = iou
+        self.imgsz = imgsz
 
         self.video_name = Path(video_path).stem
         self.progress_file = os.path.join(output_dir, f"{self.video_name}_progress.json")
         self.tracker_pickle = os.path.join(output_dir, f"{self.video_name}_tracker_state.pkl")
-        self.csv_dir = os.path.join(output_dir, "csv") # Create sub-folder /csv
-        self.log_file = os.path.join(output_dir, f"{self.video_name}_run.log")
+        self.csv_dir = os.path.join(output_dir, "csv") # Create sub-folder, csv
+
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._ensure_dirs()
+
+        self.log_file = os.path.join(output_dir, f"{self.video_name}_run_{current_time}.log")
         self.logger = self._setup_logger()
 
         # Colors for visualization
@@ -44,7 +50,7 @@ class ContinuousTracking:
             (255, 255, 0), (0, 128, 255), (255, 128, 0), (128, 0, 255), (0, 255, 128)
         ]
 
-        self._ensure_dirs()
+
         self._sync_yaml_config()
         self.state = self._load_state()
 
@@ -58,7 +64,7 @@ class ContinuousTracking:
         """Sets up a logger that writes to Console AND Google Drive."""
         logger = logging.getLogger(self.video_name)
         logger.setLevel(logging.INFO)
-        
+
         # Prevent "Duplicate Logs" when re-running cells in Colab
         if logger.handlers:
             return logger
@@ -77,7 +83,7 @@ class ContinuousTracking:
         logger.addHandler(stream_handler)
 
         return logger
-    
+
     def _ensure_dirs(self):
         "Checking is the directory is exist, if not create one"
         os.makedirs(self.output_dir, exist_ok=True)
@@ -87,7 +93,7 @@ class ContinuousTracking:
         """Forces the tracker YAML to match our pickle path and use the YAML's interval."""
         with open(self.tracker_yaml, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         # Syncing the pickle file location to match our structure
         # Syncing frame per chunk of JSON to match Pickle
         self.frames_per_chunk = config.get('save_interval', 5000)
@@ -118,31 +124,36 @@ class ContinuousTracking:
                 "last_saved_at": None
             }
             return inital_state
-        
+
     def _save_state(self):
         self.state["last_saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         with open(self.progress_file, "w") as f:
-            json.dump(self.state, f, indent=2)  
+            json.dump(self.state, f, indent=2)
 
     def _process_chunk(self, cap, model):
-        """ Processes ONE single chunk with Atomic Save 
+        """ Processes ONE single chunk with Atomic Save
             (Save in local storage first, then copy to drive)."""
         idx = self.state["chunk_index"]
         start_frame = self.state["next_frame"]
-        
+
         chunk_name = f"{self.video_name}_chunk_{idx:03d}.mp4"
         local_path = os.path.join("/content", chunk_name)      # Local Path
         drive_path = os.path.join(self.output_dir, chunk_name) # Drive Path
         csv_name = f"{self.video_name}_chunk_{idx:03d}.csv"
         local_csv_path = os.path.join("/content", csv_name)
         drive_csv_path = os.path.join(self.csv_dir, csv_name)
+        # If we are retrying a chunk, ensure we don't append to old garbage files
+        if os.path.exists(local_path):
+            os.remove(local_path)
+        if os.path.exists(local_csv_path):
+            os.remove(local_csv_path)
 
         self.logger.info(f"\nProcessing Chunk {idx:03d} (Frame {start_frame} to {start_frame + self.frames_per_chunk})...")
 
         # Init Writer (Writing to Local Disk)
-        writer = cv2.VideoWriter(local_path, cv2.VideoWriter_fourcc(*'mp4v'), 
+        writer = cv2.VideoWriter(local_path, cv2.VideoWriter_fourcc(*'mp4v'),
                                  self.state["fps"], (self.state["width"], self.state["height"]))
-        
+
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         current_frame = start_frame
         frames_processed = 0
@@ -157,9 +168,10 @@ class ContinuousTracking:
             results = model.track(frame,
                                   tracker = self.tracker_yaml,
                                   classes = 3,
+                                  persist=True,
                                   save = False,
                                   conf = self.conf, iou = self.iou, line_width = 2,
-                                  imgsz = [1088, 1920])
+                                  imgsz = self.imgsz)
 
             # --- DRAWING BB---
             if results[0].boxes.id is not None:
@@ -170,27 +182,28 @@ class ContinuousTracking:
                     score = float(box[5])
                     color = self.colors[track_id % len(self.colors)]
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                    cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 10), 
+                    cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
             writer.write(frame)
             current_abs_frame = start_frame + frames_processed
             save_csv(results, current_abs_frame, local_csv_path, save_conf=False)
+            print(f"Processed {current_frame} / {self.state['total_frames']} frames")
             current_frame += 1
             frames_processed += 1
-        
+
         # --- SAVE TO LOCAL ---
         writer.release()
-        
+
         self.logger.info(f"Uploading Chunk {idx} to Local Drive...")
         if os.path.exists(local_path):
             # Move file to Drive
-            shutil.move(local_path, drive_path) 
-            
+            shutil.move(local_path, drive_path)
+
         self.logger.info(f"Uploading CSV Chunk {idx}...")
         if os.path.exists(local_csv_path):
             shutil.move(local_csv_path, drive_csv_path)
-        
+
         # Update State
         self.state["chunks"].append({"file": chunk_name, "start": start_frame, "end": current_frame - 1})
         self.state["chunk_index"] += 1
@@ -205,7 +218,7 @@ class ContinuousTracking:
             f for f in os.listdir(self.output_dir)
             if f.endswith(".mp4") and f"{self.video_name}_chunk_" in f
         ])
-        
+
         if not chunk_files:
             self.logger.warning("⚠️ No chunks found to combine.")
             return
@@ -223,7 +236,7 @@ class ContinuousTracking:
         ]
         subprocess.run(cmd, check=True)
         self.logger.info(f"FINAL VIDEO SAVED: {final_path}")
-        
+
     def run(self):
         """Main Loop."""
         if self.state["done"]:
@@ -234,8 +247,8 @@ class ContinuousTracking:
         self.logger.info("Loading YOLO Model...")
         model = YOLO(self.model_name)
 
-        cap = cv2.VideoCapture(self.video_path)
-        
+        cap = cv2.VideoCapture(str(self.video_path))
+
         # Init Video Info if not present
         if self.state["total_frames"] is None:
             self.state["width"] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -247,7 +260,7 @@ class ContinuousTracking:
         # Process Chunks Loop
         while not self.state["done"]:
             self._process_chunk(cap, model)
-        
+
         cap.release()
         self.logger.info("All frames processed!")
         self._combine_videos()
