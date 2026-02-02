@@ -8,7 +8,7 @@ import cv2
 from pathlib import Path
 import logging
 from ultralytics import YOLO
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     from save_csv import save_csv
@@ -24,7 +24,7 @@ class ContinuousTracking:
     saves progress atomically to Drive, and can resume from crashes
     without data loss.
     """
-    def __init__(self, video_path, output_dir, tracker_config_path, model_name = "yolov9e.pt", conf=0.05, iou=0.45, imgsz = 1920, print_current_frame = True):
+    def __init__(self, video_path, output_dir, tracker_config_path, save_interval = 5000, model_name = "yolov9e.pt", conf=0.05, iou=0.45, imgsz = 1920, print_current_frame = True):
         self.video_path = Path(video_path)
         self.output_dir = Path(output_dir)
         self.tracker_yaml = tracker_config_path # YAML File path
@@ -33,13 +33,16 @@ class ContinuousTracking:
         self.iou = iou
         self.imgsz = imgsz
         self.print_current_frame = print_current_frame
+        self.frames_per_chunk = save_interval
 
         self.video_name = Path(video_path).stem
         self.progress_file = os.path.join(output_dir, f"{self.video_name}_progress.json")
         self.tracker_pickle = os.path.join(output_dir, f"{self.video_name}_tracker_state.pkl")
         self.csv_dir = os.path.join(output_dir, "csv") # Create sub-folder, csv
 
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        gmt7_time = datetime.utcnow() + timedelta(hours=7)
+        current_time = gmt7_time.strftime("%Y%m%d_%H%M%S")
+        
         self._ensure_dirs()
 
         self.log_file = os.path.join(output_dir, f"{self.video_name}_run_{current_time}.log")
@@ -56,10 +59,13 @@ class ContinuousTracking:
         self.state = self._load_state()
 
         self.logger.info("Continuous Tracking Initialized.")
-        self.logger.info(f"Progress File Directory: {self.progress_file}")
-        self.logger.info(f"Pickle File Directory: {self.tracker_pickle}")
+        self.logger.info(f"Save Interval: {self.frames_per_chunk} frames")
         self.logger.info(f"CSV Directory: {self.csv_dir}")
         self.logger.info(f"Output Directory: {self.output_dir}")
+        self.logger.info(f"Progress File Path: {self.progress_file}")
+        self.logger.info(f"Pickle File Path: {self.tracker_pickle}")
+        self.logger.info(f"Log File Path: {self.log_file}")
+
 
     def _setup_logger(self):
         """Sets up a logger that writes to Console AND Google Drive."""
@@ -89,22 +95,6 @@ class ContinuousTracking:
         "Checking is the directory is exist, if not create one"
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.csv_dir, exist_ok=True)
-
-    def _sync_yaml_config(self):
-        """Forces the tracker YAML to match our pickle path and use the YAML's interval."""
-        with open(self.tracker_yaml, 'r') as f:
-            config = yaml.safe_load(f)
-
-        # Syncing the pickle file location to match our structure
-        # Syncing frame per chunk of JSON to match Pickle
-        self.frames_per_chunk = config.get('save_interval', 5000)
-        config['state_file'] = self.tracker_pickle
-        config['save_interval'] = self.frames_per_chunk
-
-        with open(self.tracker_yaml, 'w') as f:
-            yaml.dump(config, f)
-        print(f"Synced Config: Chunk Size = {self.frames_per_chunk}")
-        print(f"Pickle Path Updated = {self.tracker_pickle}")
 
     def _load_state(self) :
         """Loads existing progress or creates new."""
