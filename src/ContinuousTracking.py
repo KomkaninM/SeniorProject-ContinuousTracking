@@ -88,9 +88,10 @@ class ContinuousTracking:
         logger = logging.getLogger(self.video_name)
         logger.setLevel(logging.INFO)
 
-        # Prevent "Duplicate Logs" when re-running cells in Colab
-        if logger.handlers:
-            return logger
+        if logger.hasHandlers():
+            for handler in logger.handlers[:]: 
+                handler.close()
+                logger.removeHandler(handler)
 
         # Formatter (Time - Level - Message)
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
