@@ -62,13 +62,26 @@ class ContinuousTracking:
         self.state = self._load_state()
 
         self.logger.info("Continuous Tracking Initialized.")
-        self.logger.info(f"Save Interval: {self.frames_per_chunk} frames")
         self.logger.info(f"CSV Directory: {self.csv_dir}")
         self.logger.info(f"Output Directory: {self.output_dir}")
         self.logger.info(f"Progress File Path: {self.progress_file}")
         self.logger.info(f"Pickle File Path: {self.tracker_pickle}")
         self.logger.info(f"Log File Path: {self.log_file}")
 
+    def _sync_yaml_config(self):
+        """Forces the tracker YAML to match our pickle path and use the YAML's interval."""
+        with open(self.tracker_yaml, 'r') as f:
+            config = yaml.safe_load(f)
+
+        # Syncing the pickle file location to match our structure
+        # Syncing frame per chunk of JSON to match Pickle
+        config['state_file'] = self.tracker_pickle
+        config['save_interval'] = self.frames_per_chunk
+
+        with open(self.tracker_yaml, 'w') as f:
+            yaml.dump(config, f)
+        print(f"Synced Config: Chunk Size = {self.frames_per_chunk}")
+        print(f"Pickle Path Updated = {self.tracker_pickle}")
 
     def _setup_logger(self):
         """Sets up a logger that writes to Console AND Google Drive."""
