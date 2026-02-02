@@ -11,5 +11,5 @@ fuse_score: False # Whether to fuse confidence scores with the iou distances bef
 # min_box_area: 10  # threshold for min box areas(for tracker evaluation, not used for now)
 
 # For Segment Videos Processing
-state_file : "/content/drive/MyDrive/ME02_Workspace/SegmentVid/SegmentVid_Development_010269/src/modified_bytetrack_for_testing_Makkasan.yaml"
+state_file : "/content/drive/MyDrive/"
 save_interval : 1000
