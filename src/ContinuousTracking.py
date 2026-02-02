@@ -84,24 +84,38 @@ class ContinuousTracking:
         print(f"Pickle Path Updated = {self.tracker_pickle}")
 
     def _setup_logger(self):
-        """Sets up a logger that writes to Console AND Google Drive."""
+        """Sets up a logger that writes to Console AND Google Drive (with auto-flush and GMT+7 time)."""
         logger = logging.getLogger(self.video_name)
         logger.setLevel(logging.INFO)
 
+        # Clear old handlers to prevent duplicates
         if logger.hasHandlers():
-            for handler in logger.handlers[:]: 
+            for handler in logger.handlers[:]:
                 handler.close()
                 logger.removeHandler(handler)
 
-        # Formatter (Time - Level - Message)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        # Define a custom time converter that returns GMT+7 time
+        def gmt7_converter(*args):
+            utc_dt = datetime.now(timezone.utc)
+            gmt7 = timezone(timedelta(hours=7))
+            return utc_dt.astimezone(gmt7).timetuple()
 
-        # Handler A: File Handler (Writes to Google Drive)
-        file_handler = logging.FileHandler(self.log_file)
+        # Create formatter and assign the converter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter.converter = gmt7_converter
+
+        # --- Define a Custom Handler that flushes immediately ---
+        class FlushingFileHandler(logging.FileHandler):
+            def emit(self, record):
+                super().emit(record)
+                self.flush()
+
+        # Use the custom flushing handler
+        file_handler = FlushingFileHandler(self.log_file)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
-        # Handler B: Stream Handler (Writes to Colab Output)
+        # Stream Handler (Console)
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         logger.addHandler(stream_handler)
@@ -197,7 +211,7 @@ class ContinuousTracking:
             writer.write(frame)
             current_abs_frame = start_frame + frames_processed
             save_csv(results, current_abs_frame, local_csv_path, save_conf=False)
-            if self.print_current_frame and frames_processed % 10 == 0:
+            if self.print_current_frame and frames_processed % 20 == 0:
                 print(f"Processed {current_frame} / {self.state['total_frames']} frames")
             current_frame += 1
             frames_processed += 1
@@ -205,7 +219,7 @@ class ContinuousTracking:
         # --- SAVE TO LOCAL ---
         writer.release()
         print("") # For cleaner output after frame count prints
-        
+
         self.logger.info(f"Uploading Chunk {idx} to Local Drive...")
         if os.path.exists(local_path):
             # Move file to Drive
