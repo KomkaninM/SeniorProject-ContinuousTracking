@@ -183,7 +183,8 @@ class ContinuousTracking:
                     score = float(box[5])
                     color = self.colors[track_id % len(self.colors)]
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                    cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 10),
+                    label = f"ID: {track_id} ({score:.2f})"     # e.g., "ID: 1 (0.89)"
+                    cv2.putText(frame, label, (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
             writer.write(frame)
