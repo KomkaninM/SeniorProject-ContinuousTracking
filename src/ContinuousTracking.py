@@ -197,14 +197,15 @@ class ContinuousTracking:
             writer.write(frame)
             current_abs_frame = start_frame + frames_processed
             save_csv(results, current_abs_frame, local_csv_path, save_conf=False)
-            if self.print_current_frame:
+            if self.print_current_frame and frames_processed % 10 == 0:
                 print(f"Processed {current_frame} / {self.state['total_frames']} frames")
             current_frame += 1
             frames_processed += 1
 
         # --- SAVE TO LOCAL ---
         writer.release()
-
+        print("") # For cleaner output after frame count prints
+        
         self.logger.info(f"Uploading Chunk {idx} to Local Drive...")
         if os.path.exists(local_path):
             # Move file to Drive
