@@ -24,7 +24,7 @@ class ContinuousTracking:
     saves progress atomically to Drive, and can resume from crashes
     without data loss.
     """
-    def __init__(self, video_path, output_dir, tracker_config_path, model_name = "yolov9e.pt", conf=0.05, iou=0.45, imgsz = 1920):
+    def __init__(self, video_path, output_dir, tracker_config_path, model_name = "yolov9e.pt", conf=0.05, iou=0.45, imgsz = 1920, print_current_frame = True):
         self.video_path = Path(video_path)
         self.output_dir = Path(output_dir)
         self.tracker_yaml = tracker_config_path # YAML File path
@@ -32,6 +32,7 @@ class ContinuousTracking:
         self.conf = conf
         self.iou = iou
         self.imgsz = imgsz
+        self.print_current_frame = print_current_frame
 
         self.video_name = Path(video_path).stem
         self.progress_file = os.path.join(output_dir, f"{self.video_name}_progress.json")
@@ -188,7 +189,8 @@ class ContinuousTracking:
             writer.write(frame)
             current_abs_frame = start_frame + frames_processed
             save_csv(results, current_abs_frame, local_csv_path, save_conf=False)
-            print(f"Processed {current_frame} / {self.state['total_frames']} frames")
+            if self.print_current_frame:
+                print(f"Processed {current_frame} / {self.state['total_frames']} frames")
             current_frame += 1
             frames_processed += 1
 
