@@ -8,7 +8,7 @@ import cv2
 from pathlib import Path
 import logging
 from ultralytics import YOLO
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 try:
     from save_csv import save_csv
@@ -40,8 +40,11 @@ class ContinuousTracking:
         self.tracker_pickle = os.path.join(output_dir, f"{self.video_name}_tracker_state.pkl")
         self.csv_dir = os.path.join(output_dir, "csv") # Create sub-folder, csv
 
-        gmt7_time = datetime.utcnow() + timedelta(hours=7)
-        current_time = gmt7_time.strftime("%Y%m%d_%H%M%S")
+        # Define GMT+7 Timezone
+        gmt7 = timezone(timedelta(hours=7))
+
+        # Get current time in UTC (aware), then convert to GMT+7
+        current_time = datetime.now(timezone.utc).astimezone(gmt7).strftime("%Y%m%d_%H%M%S")
         
         self._ensure_dirs()
 
