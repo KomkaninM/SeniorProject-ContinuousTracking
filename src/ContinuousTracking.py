@@ -35,7 +35,15 @@ class ContinuousTracking:
         self.print_current_frame = print_current_frame
         self.frames_per_chunk = save_interval
 
+        if self.print_current_frame:
+            self.isVerbose = True   
+            self.print_interval = 50   
+        else:
+            self.isVerbose = False  
+            self.print_interval = 200
+
         self.video_name = Path(video_path).stem
+        self.chunks_dir = os.path.join(output_dir, f"{self.video_name}_chunks")
         self.progress_file = os.path.join(output_dir, f"{self.video_name}_progress.json")
         self.tracker_pickle = os.path.join(output_dir, f"{self.video_name}_tracker_state.pkl")
         self.csv_dir = os.path.join(output_dir, "csv") # Create sub-folder, csv
@@ -69,7 +77,11 @@ class ContinuousTracking:
         self.logger.info(f"Log File Path: {self.log_file}")
 
     def _sync_yaml_config(self):
-        """Forces the tracker YAML to match our pickle path and use the YAML's interval."""
+        """
+        Reads user's ORIGINAL YAML, injects runtime params, 
+        and saves to a NEW temporary file in the output directory.
+        This prevents modifying the user's source file in Google Drive.
+        """
         with open(self.tracker_yaml, 'r') as f:
             config = yaml.safe_load(f)
 
@@ -78,10 +90,14 @@ class ContinuousTracking:
         config['state_file'] = self.tracker_pickle
         config['save_interval'] = self.frames_per_chunk
 
-        with open(self.tracker_yaml, 'w') as f:
+        custom_yaml_path = os.path.join(self.output_dir, f"{self.video_name}_custom_bytetrack_config.yaml")
+        with open(custom_yaml_path, 'w') as f:
             yaml.dump(config, f)
-        print(f"Synced Config: Chunk Size = {self.frames_per_chunk}")
-        print(f"Pickle Path Updated = {self.tracker_pickle}")
+
+        self.tracker_yaml = custom_yaml_path
+        self.logger.info(f"Synced Config: Chunk Size = {self.frames_per_chunk}")
+        self.logger.info(f"Pickle Path Updated = {self.tracker_pickle}")
+        self.logger.info(f"Custom Config Path: {custom_yaml_path}")
 
     def _setup_logger(self):
         """Sets up a logger that writes to Console AND Google Drive (with auto-flush and GMT+7 time)."""
@@ -126,6 +142,7 @@ class ContinuousTracking:
         "Checking is the directory is exist, if not create one"
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.csv_dir, exist_ok=True)
+        os.makedirs(self.chunks_dir, exist_ok=True)
 
     def _load_state(self) :
         """Loads existing progress or creates new."""
@@ -160,10 +177,11 @@ class ContinuousTracking:
 
         chunk_name = f"{self.video_name}_chunk_{idx:03d}.mp4"
         local_path = os.path.join("/content", chunk_name)      # Local Path
-        drive_path = os.path.join(self.output_dir, chunk_name) # Drive Path
+        drive_path = os.path.join(self.chunks_dir, chunk_name) # Drive Path
         csv_name = f"{self.video_name}_chunk_{idx:03d}.csv"
         local_csv_path = os.path.join("/content", csv_name)
         drive_csv_path = os.path.join(self.csv_dir, csv_name)
+
         # If we are retrying a chunk, ensure we don't append to old garbage files
         if os.path.exists(local_path):
             os.remove(local_path)
@@ -193,7 +211,8 @@ class ContinuousTracking:
                                   persist=True,
                                   save = False,
                                   conf = self.conf, iou = self.iou, line_width = 2,
-                                  imgsz = self.imgsz)
+                                  imgsz = self.imgsz,
+                                  verbose = self.isVerbose)
 
             # --- DRAWING BB---
             if results[0].boxes.id is not None:
@@ -207,12 +226,14 @@ class ContinuousTracking:
                     label = f"ID: {track_id} ({score:.2f})"     # e.g., "ID: 1 (0.89)"
                     cv2.putText(frame, label, (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-
             writer.write(frame)
             current_abs_frame = start_frame + frames_processed
             save_csv(results, current_abs_frame, local_csv_path, save_conf=False)
-            if self.print_current_frame and frames_processed % 20 == 0:
-                print(f"Processed {current_frame} / {self.state['total_frames']} frames")
+
+            if self.print_current_frame and frames_processed % self.print_interval == 0:
+                end_char = '\n' if self.isVerbose else '\r'
+                print(f"Processed {current_frame} / {self.state['total_frames']} frames", end=end_char)
+
             current_frame += 1
             frames_processed += 1
 
@@ -240,20 +261,20 @@ class ContinuousTracking:
         """Merges all chunks using FFmpeg."""
         self.logger.info("\n All chunks done. Combining video...")
         chunk_files = sorted([
-            f for f in os.listdir(self.output_dir)
+            f for f in os.listdir(self.chunks_dir)
             if f.endswith(".mp4") and f"{self.video_name}_chunk_" in f
         ])
 
         if not chunk_files:
-            self.logger.warning("⚠️ No chunks found to combine.")
+            self.logger.warning("WARNING: No chunks found to combine.")
             return
 
         list_path = os.path.join(self.output_dir, "ffmpeg_list.txt")
-        final_path = os.path.join(self.output_dir, f"{self.video_name}_combined_output.mp4")
+        final_path = os.path.join(self.output_dir, f"{self.video_name}_final_output.mp4")
 
         with open(list_path, "w") as f:
             for cf in chunk_files:
-                f.write(f"file '{os.path.join(self.output_dir, cf)}'\n")
+                f.write(f"file '{os.path.join(self.chunks_dir, cf)}'\n")
 
         cmd = [
             "ffmpeg", "-f", "concat", "-safe", "0",
