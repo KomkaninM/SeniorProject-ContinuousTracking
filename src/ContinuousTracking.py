@@ -230,10 +230,10 @@ class ContinuousTracking:
             current_abs_frame = start_frame + frames_processed
             save_csv(results, current_abs_frame, local_csv_path, save_conf=False)
 
-            if self.print_current_frame and frames_processed % self.print_interval == 0:
+            if frames_processed % self.print_interval == 0:
                 end_char = '\n' if self.isVerbose else '\r'
                 print(f"Processed {current_frame} / {self.state['total_frames']} frames", end=end_char)
-
+                
             current_frame += 1
             frames_processed += 1
 
