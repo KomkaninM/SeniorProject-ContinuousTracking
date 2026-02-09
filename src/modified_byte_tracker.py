@@ -289,7 +289,7 @@ class BYTETracker:
 
         #--- ME21 : START ---
         # Load args for state file configuration
-        self.state_file = getattr(args, 'state_file', "/content/drive/MyDrive/ME02_Workspace/SegmentVid/delete_this_later.pkl") # Path to save/load tracker state
+        self.state_file = getattr(args, 'state_file', "/content") # Path to save/load tracker state
         self.save_interval = getattr(args, 'save_interval', 5000) # Interval to save tracker state
 
         # Load state if exists
