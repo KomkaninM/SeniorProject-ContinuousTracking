@@ -220,18 +220,18 @@ class ContinuousTracking:
 
             # --- DRAWING BB---
             # --- 1. UPDATE HISTORY (Only for current detections) ---
-            if "track_history" not in self.state:
-                self.state["track_history"] = {}
+            # if "track_history" not in self.state:
+            #     self.state["track_history"] = {}
 
             if results[0].boxes.id is not None:
                 boxes = results[0].boxes.data.cpu().numpy()
                 
                 for box in boxes:
+
                     track_id = int(box[4])
-                    
-                    # Optional: Focus ID filter
-                    if self.focus_ids and track_id not in self.focus_ids:
-                        continue
+                    # # Optional: Focus ID filter
+                    # if self.focus_ids and track_id not in self.focus_ids:
+                    #     continue
 
                     x1, y1, x2, y2 = map(int, box[:4])
                     cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
