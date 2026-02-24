@@ -222,58 +222,41 @@ class ContinuousTracking:
                                   verbose = self.isVerbose)
 
             # --- DRAWING BB---
+            # --- DRAWING INFINITE TRAILS (Presentation Mode) ---
             if results[0].boxes.id is not None:
                 boxes = results[0].boxes.data.cpu().numpy()
                 
-                # Ensure track_history exists (for backward compatibility with old JSONs)
                 if "track_history" not in self.state:
                     self.state["track_history"] = {}
 
                 for box in boxes:
                     track_id = int(box[4])
+                    
+                    # Optional: Focus ID filter
                     if self.focus_ids and track_id not in self.focus_ids:
                         continue
 
+                    # Calculate center
                     x1, y1, x2, y2 = map(int, box[:4])
-                    track_id = int(box[4])
-                    score = float(box[5])
-                    color = self.colors[track_id % len(self.colors)]
-                    
-                    # 1. Calculate Center Point
-                    cx = int((x1 + x2) / 2)
-                    cy = int((y1 + y2) / 2)
-                    
-                    # JSON keys must be strings, so we cast the ID
+                    cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
                     str_id = str(track_id)
                     
-                    # 2. Update History
+                    # Update History (NO POPPING = INFINITE)
                     if str_id not in self.state["track_history"]:
                         self.state["track_history"][str_id] = []
                     
                     self.state["track_history"][str_id].append((cx, cy))
                     
-                    # Limit the tail length (e.g., last 60 frames = ~2 seconds at 30fps)
-                    max_tail = 120
-                    if len(self.state["track_history"][str_id]) > max_tail:
-                        self.state["track_history"][str_id].pop(0) # Remove oldest point
-                    
-                    # # 3. Update History (No popping = Infinite length!)
-                    # if str_id not in self.state["track_history"]:
-                    #     self.state["track_history"][str_id] = []
-                    # self.state["track_history"][str_id].append((cx, cy))
-
-                    # 4. Draw the Full Path
+                    # Draw the Full Path
                     points = self.state["track_history"][str_id]
+                    color = self.colors[track_id % len(self.colors)]
+                    
                     for i in range(1, len(points)):
-
-                        thickness = max(1,int(np.sqrt(float(i) / len(points)) * 5))
-
-                        # FORCE conversion to tuple of ints to fix JSON loading issue
                         pt1 = tuple(map(int, points[i - 1]))
                         pt2 = tuple(map(int, points[i]))
-                        
-                        cv2.line(frame, pt1, pt2, color, thickness)
-
+                        # We use a constant thickness for the infinite line
+                        cv2.line(frame, pt1, pt2, color, 2)
+                    
                     # 4. Draw Bounding Box & Label
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     label = f"ID: {track_id}"     
