@@ -242,6 +242,7 @@ class ContinuousTracking:
                     
                     self.state["track_history"][str_id].append((cx, cy))
 
+                    color = self.colors[track_id % len(self.colors)]
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     label = f"ID: {track_id}"     
                     cv2.putText(frame, label, (x1, y1 - 10),
