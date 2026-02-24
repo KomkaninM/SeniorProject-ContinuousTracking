@@ -222,13 +222,13 @@ class ContinuousTracking:
                                   verbose = self.isVerbose)
 
             # --- DRAWING BB---
-            # --- DRAWING INFINITE TRAILS (Presentation Mode) ---
+            # --- 1. UPDATE HISTORY (Only for current detections) ---
+            if "track_history" not in self.state:
+                self.state["track_history"] = {}
+
             if results[0].boxes.id is not None:
                 boxes = results[0].boxes.data.cpu().numpy()
                 
-                if "track_history" not in self.state:
-                    self.state["track_history"] = {}
-
                 for box in boxes:
                     track_id = int(box[4])
                     
@@ -236,32 +236,32 @@ class ContinuousTracking:
                     if self.focus_ids and track_id not in self.focus_ids:
                         continue
 
-                    # Calculate center
                     x1, y1, x2, y2 = map(int, box[:4])
                     cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
                     str_id = str(track_id)
                     
-                    # Update History (NO POPPING = INFINITE)
                     if str_id not in self.state["track_history"]:
                         self.state["track_history"][str_id] = []
                     
                     self.state["track_history"][str_id].append((cx, cy))
-                    
-                    # Draw the Full Path
-                    points = self.state["track_history"][str_id]
-                    color = self.colors[track_id % len(self.colors)]
-                    
-                    for i in range(1, len(points)):
-                        pt1 = tuple(map(int, points[i - 1]))
-                        pt2 = tuple(map(int, points[i]))
-                        # We use a constant thickness for the infinite line
-                        cv2.line(frame, pt1, pt2, color, 2)
-                    
-                    # 4. Draw Bounding Box & Label
+
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     label = f"ID: {track_id}"     
                     cv2.putText(frame, label, (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                    
+            # --- 2. DRAW ALL TRAILS (Even for lost/broken IDs) ---
+            # By looping through the entire dictionary, old trails never disappear.
+            for str_id, points in self.state["track_history"].items():
+                track_id = int(str_id)
+                color = self.colors[track_id % len(self.colors)]
+                
+                for i in range(1, len(points)):
+                    pt1 = tuple(map(int, points[i - 1]))
+                    pt2 = tuple(map(int, points[i]))
+                    cv2.line(frame, pt1, pt2, color, 3)
+                    
+                   
             writer.write(frame)
             current_abs_frame = start_frame + frames_processed
             save_csv(results, current_abs_frame, local_csv_path, save_conf=False)
