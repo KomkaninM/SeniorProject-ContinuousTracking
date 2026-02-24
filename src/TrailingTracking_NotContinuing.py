@@ -221,7 +221,7 @@ class ContinuousTracking:
             # --- DRAWING BB---
             # --- 1. UPDATE HISTORY (Only for current detections) ---
             # if "track_history" not in self.state:
-            #     self.state["track_history"] = {}
+            self.state["track_history"] = {}
 
             if results[0].boxes.id is not None:
                 boxes = results[0].boxes.data.cpu().numpy()
