@@ -202,9 +202,6 @@ class ContinuousTracking:
         current_frame = start_frame
         frames_processed = 0
 
-        #Reset Trailing
-        self.state["track_history"] = {}
-
         while frames_processed < self.frames_per_chunk:
             ret, frame = cap.read()
             if not ret:
