@@ -1,14 +1,20 @@
-import os
+# THIS CODE IS NOT PUSH YET. I WILL DO NEXT TIME
+
+# --- Standard Library ---
 import json
-import time
+import logging
+import os
 import shutil
 import subprocess
-import yaml
-import cv2
-from pathlib import Path
-import logging
-from ultralytics import YOLO
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from dataclasses import dataclass
+
+# --- Third-Party ---
+import cv2
+import yaml
+from ultralytics import YOLO
 
 try:
     from save_csv import save_csv
@@ -18,22 +24,43 @@ except ImportError:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     from save_csv import save_csv
 
+# Group 1: File Paths
+@dataclass
+class FilePaths:
+    video: str | Path
+    output_dir: str | Path
+    tracker_config: str | Path 
+
+# Group 2: Model Hyperparameters (Defaults provided)
+@dataclass
+class ModelParams:
+    name: str = "yolov9e.pt"
+    conf: float = 0.05
+    iou: float = 0.45
+    imgsz: int = 1920
+
+# Group 3: Execution Settings (Logging & Saving)
+@dataclass
+class RuntimeSettings:
+    save_interval: int = 5000
+    verbose: bool = True
+
 class ContinuousTracking:
     """
     A robust video tracking pipeline that processes video in chunks,
     saves progress atomically to Drive, and can resume from crashes
     without data loss.
     """
-    def __init__(self, video_path, output_dir, tracker_config_path, save_interval = 5000, model_name = "yolov9e.pt", conf=0.05, iou=0.45, imgsz = 1920, print_current_frame = True):
-        self.video_path = Path(video_path)
-        self.output_dir = Path(output_dir)
-        self.tracker_yaml = tracker_config_path # YAML File path
-        self.model_name = model_name
-        self.conf = conf
-        self.iou = iou
-        self.imgsz = imgsz
-        self.print_current_frame = print_current_frame
-        self.frames_per_chunk = save_interval
+    def __init__(self, paths: FilePaths, model: ModelParams, runtime: RuntimeSettings):
+        self.video_path = paths.video
+        self.output_dir = paths.output_dir
+        self.tracker_yaml = paths.tracker_config # YAML File path
+        self.model_name = model.name
+        self.conf = model.conf
+        self.iou = model.iou
+        self.imgsz = model.imgsz
+        self.print_current_frame = runtime.verbose
+        self.frames_per_chunk = runtime.save_interval
 
         if self.print_current_frame:
             self.isVerbose = True   
@@ -42,11 +69,11 @@ class ContinuousTracking:
             self.isVerbose = False  
             self.print_interval = 200
 
-        self.video_name = Path(video_path).stem
-        self.chunks_dir = os.path.join(output_dir, f"{self.video_name}_chunks")
-        self.progress_file = os.path.join(output_dir, f"{self.video_name}_progress.json")
-        self.tracker_pickle = os.path.join(output_dir, f"{self.video_name}_tracker_state.pkl")
-        self.csv_dir = os.path.join(output_dir, "csv") # Create sub-folder, csv
+        self.video_name = Path(self.video_path).stem
+        self.chunks_dir = os.path.join(self.output_dir, f"{self.video_name}_chunks")
+        self.progress_file = os.path.join(self.output_dir, f"{self.video_name}_progress.json")
+        self.tracker_pickle = os.path.join(self.output_dir, f"{self.video_name}_tracker_state.pkl")
+        self.csv_dir = os.path.join(self.output_dir, "csv") # Create sub-folder, csv
 
         # Define GMT+7 Timezone
         gmt7 = timezone(timedelta(hours=7))
@@ -56,7 +83,7 @@ class ContinuousTracking:
         
         self._ensure_dirs()
 
-        self.log_file = os.path.join(output_dir, f"{self.video_name}_run_{current_time}.log")
+        self.log_file = os.path.join(self.output_dir, f"{self.video_name}_run_{current_time}.log")
         self.logger = self._setup_logger()
 
         # Colors for visualization
